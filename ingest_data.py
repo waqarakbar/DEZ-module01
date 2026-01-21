@@ -1,22 +1,11 @@
+import click
 import pandas as pd
 from sqlalchemy import create_engine
 from tqdm.auto import tqdm
 
 
-# Database connection parameters
-DB_USER = 'root'
-DB_PASSWORD = 'root'
-DB_HOST = 'localhost'
-DB_PORT = '5432'
-DB_NAME = 'ny_taxi'
-TABLE_NAME = 'yellow_taxi_data'
-
-# Data source configuration
+# Data URL prefix (constant)
 DATA_URL_PREFIX = 'https://github.com/DataTalksClub/nyc-tlc-data/releases/download/yellow/'
-YEAR = 2021
-MONTH = 1
-DATA_FILE = f'yellow_tripdata_{YEAR}-{MONTH:02d}.csv.gz'
-CHUNK_SIZE = 100000
 
 # Data type definitions
 DTYPE = {
@@ -44,7 +33,17 @@ PARSE_DATES = [
 ]
 
 
-def run():
+@click.command()
+@click.option('--db-user', default='root', help='Database user')
+@click.option('--db-password', default='root', help='Database password')
+@click.option('--db-host', default='localhost', help='Database host')
+@click.option('--db-port', default='5432', help='Database port')
+@click.option('--db-name', default='ny_taxi', help='Database name')
+@click.option('--table-name', default='yellow_taxi_data', help='Table name')
+@click.option('--year', default=2021, type=int, help='Year of the data to ingest')
+@click.option('--month', default=1, type=int, help='Month of the data to ingest')
+@click.option('--chunk-size', default=100000, type=int, help='Chunk size for reading CSV')
+def run(db_user, db_password, db_host, db_port, db_name, table_name, year, month, chunk_size):
     """
     Read NYC taxi data from CSV and insert it into PostgreSQL database.
     
@@ -53,17 +52,20 @@ def run():
     2. Creates the table schema on first chunk
     3. Appends remaining chunks to the table
     """
+    # Build data file name
+    data_file = f'yellow_tripdata_{year}-{month:02d}.csv.gz'
+    
     # Create database connection
-    connection_string = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+    connection_string = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
     engine = create_engine(connection_string)
     
     # Read CSV data in chunks
     df_iter = pd.read_csv(
-        f"{DATA_URL_PREFIX}{DATA_FILE}", 
+        f"{DATA_URL_PREFIX}{data_file}", 
         dtype=DTYPE,
         parse_dates=PARSE_DATES,
         iterator=True,
-        chunksize=CHUNK_SIZE
+        chunksize=chunk_size
     )
     
     # Process chunks
@@ -71,13 +73,13 @@ def run():
     for df_chunk in tqdm(df_iter):
         if first:
             # Create table with schema from first chunk
-            df_chunk.head(n=0).to_sql(name=TABLE_NAME, con=engine, if_exists='replace')
+            df_chunk.head(n=0).to_sql(name=table_name, con=engine, if_exists='replace')
             first = False
         
         # Insert data
-        df_chunk.to_sql(name=TABLE_NAME, con=engine, if_exists='append')
+        df_chunk.to_sql(name=table_name, con=engine, if_exists='append')
     
-    print(f"Data ingestion completed successfully to table '{TABLE_NAME}'")
+    print(f"Data ingestion completed successfully to table '{table_name}'")
 
 
 if __name__ == "__main__":
